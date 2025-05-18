@@ -536,12 +536,12 @@ pass
 
 # We need an empty logits flag to warn people logits will not be returned anymore unless asked ie
 # os.environ['UNSLOTH_RETURN_LOGITS'] = '1'
-LOGITS_ERROR_STRING = \\
-    "Unsloth: Logits are empty from 2024.11 onwards. To get raw logits again, please "\\
-    'set the environment variable `UNSLOTH_RETURN_LOGITS` to `"1" BEFORE starting to train ie before `trainer.train()`. For example:\\n'\\
-    "```\\nimport os\\n"\\
-    "os.environ['UNSLOTH_RETURN_LOGITS'] = '1'\\n"\\
-    "trainer.train()\\n```\\n"\\
+LOGITS_ERROR_STRING = \
+    "Unsloth: Logits are empty from 2024.11 onwards. To get raw logits again, please "\
+    'set the environment variable `UNSLOTH_RETURN_LOGITS` to `"1" BEFORE starting to train ie before `trainer.train()`. For example:\\n'\
+    "```\\nimport os\\n"\
+    "os.environ['UNSLOTH_RETURN_LOGITS'] = '1'\\n"\
+    "trainer.train()\\n```\\n"\
     "No need to restart your console - just add `os.environ['UNSLOTH_RETURN_LOGITS'] = '1'` before trainer.train() and re-run the cell!"
 
 def raise_logits_error(*args, **kwargs): raise NotImplementedError(LOGITS_ERROR_STRING)
@@ -566,7 +566,7 @@ pass
 """
 
 # Replace Cross Entropy cells with fused linear lm heads
-cross_entropy_find_1 = """
+cross_entropy_find_1 = r"""
 logits = self.lm_head(hidden_states$INDEXING$
 $LOGITSCALINGMULTIPLY$
 $LOGITSCALINGDIVISION$
@@ -702,7 +702,7 @@ else:
     # if n_items is not None: loss = loss / n_items
 """
 
-cross_entropy_find_2 = """
+cross_entropy_find_2 = r"""
 logits = self.lm_head(hidden_states$INDEXING$
 $LOGITSCALINGMULTIPLY$
 $LOGITSCALINGDIVISION$
@@ -816,7 +816,7 @@ else:
     loss = self.loss_function(\\6, \\7.to(self.lm_head.weight.device), \\8, **\\9)
 """
 
-cross_entropy_find_3 = """
+cross_entropy_find_3 = r"""
 $OUTPUTLOGITS$
 $LOGITSCALINGMULTIPLY$
 $LOGITSCALINGDIVISION$
@@ -927,12 +927,12 @@ def apply_fused_lm_head(forward):
     # All Unsloth Zoo code licensed under LGPLv3
     for cross_entropy_find, cross_entropy_replacement in ce_finders:
         cross_entropy_find = cross_entropy_find.strip()\
-            .replace("*", "\*").replace("^", "\^")\
-            .replace("-", "\-").replace("_", "\_")\
-            .replace(":", "\:").replace("+", "\+")\
-            .replace(".", "\.").replace(",", "\,")\
-            .replace("(", "\(").replace(")", "\)")\
-            .replace("[", "\[").replace("]", "\]")\
+            .replace("*", r"\*").replace("^", r"\^")\
+            .replace("-", r"\-").replace("_", r"\_")\
+            .replace(":", r"\:").replace("+", r"\+")\
+            .replace(".", r"\.").replace(",", r"\,")\
+            .replace("(", r"\(").replace(")", r"\)")\
+            .replace("[", r"\[").replace("]", r"\]")\
             .replace(
                 "\n",
                 r"(?:[\s\n]{0,}(?:\#[^\n]{1,}[\n][\s\n]{1,})?){0,}"
@@ -1021,9 +1021,9 @@ def apply_fused_lm_head(forward):
         )
 
         # Find matches
-        if "loss\_function" in cross_entropy_find and "loss_function" not in forward:
+        if r"loss\_function" in cross_entropy_find and "loss_function" not in forward:
             continue
-        elif "loss\_function" not in cross_entropy_find and "loss_function" in forward:
+        elif r"loss\_function" not in cross_entropy_find and "loss_function" in forward:
             continue
         elif "CrossEntropyLoss" not in cross_entropy_find and "CrossEntropyLoss" in forward:
             continue
@@ -1059,7 +1059,7 @@ def apply_fused_lm_head(forward):
         except:
             continue
         # Return logits back
-        if "logits = outputs\.logits" in cross_entropy_find:
+        if r"logits = outputs\.logits" in cross_entropy_find:
             forward = forward.replace(
                 "logits = EMPTY_LOGITS",
                 "logits = outputs.logits",
@@ -1166,7 +1166,7 @@ def patch_gradient_checkpointing(module, source):
 
     # Check in forward source
     finder = \
-        r"for ([^\s]{1,}) in " + modulelist_item + "\:[\n]" + \
+        r"for ([^\s]{1,}) in " + modulelist_item + r"\:[\n]" + \
         r"([\s]{4,})hidden_states = \1\(([^\)]{1,})\)"
     find = re.findall(finder, forward)
     if len(find) == 0:
@@ -1345,7 +1345,7 @@ def patch_residual_stream(source):
     source = re.sub(
         r"if self\.([^\(]{2,})\:\n"\
         r"[\s]{4,}"\
-        r"(hidden\_state(?:s)?) \= ([^\s]{4,}) \* \2\n"\
+        r"(hidden_state(?:s)?) \= ([^\s]{4,}) \* \2\n"\
         r"[\s]{4,}"\
         r"\2 \= residual \+ \2",
 
@@ -1358,7 +1358,7 @@ def patch_residual_stream(source):
     # hidden_states = residual + hidden_states * self.residual_multiplier
     matches = re.findall(
         r"[\s]{4,}"\
-        r"((hidden\_state(?:s)?) \= residual \+ "\
+        r"((hidden_state(?:s)?) \= residual \+ "\
         r"(?:"\
         r"(?:\2 \* ([^\n]{3,}))"\
         r"|"\
@@ -1409,13 +1409,13 @@ def patch_gradient_accumulation(modeling_file, module):
 
         total_has_kwargs = True
         print(f"Unsloth: Patching {inner_class.__name__} within {module.__name__} to fix gradient accumulation.")
-        regex_find = f"{call_class}\(([^\)]{{1,}})\)"
+        regex_find = rf"{call_class}\(([^\)]{{1,}})\)"
         source = re.sub(regex_find, rf"{call_class}(\1, **kwargs)", source, flags = re.DOTALL | re.MULTILINE)
     pass
 
     if total_has_kwargs:
         # Fix **kwargs for function def
-        regex_find = "def forward\(([^\)]{1,})\)"
+        regex_find = r"def forward\(([^\)]+)\)"
         source = re.sub(regex_find, r"def forward(\1, **kwargs)", source, flags = re.DOTALL | re.MULTILINE)
 
         # Remove double commas
@@ -1548,7 +1548,7 @@ def unsloth_compile_transformers(
     torch_modules = re.findall(r"class ([^\s]{1,})\(.+?\.Module\)", full_source)
     # Also get class LlamaSdpaAttention(LlamaAttention)
     inherited_class = "(?:" + "|".join(re.findall(r"class ([^\s]{1,})\(.+?\.Module\)", full_source)) + ")"
-    inherited_modules = re.findall(r"class ([^\s]{1,})\(" + inherited_class + "\)", full_source)
+    inherited_modules = re.findall(r"class ([^\s]{1,})\(" + inherited_class + r"\)", full_source)
     # OrderedSet
     torch_modules = list(dict.fromkeys(torch_modules + inherited_modules))
     # Get all functions as well
@@ -1602,7 +1602,7 @@ def unsloth_compile_transformers(
         # Start of text
         defined = re.findall(r"\bdef[\s]{1,}" + re.escape(function),full_source, flags = re.DOTALL)
         # Disable self.
-        called = re.findall(r"[\s]{1,}" + re.escape(function) + "\(.+?\)", full_source, flags = re.DOTALL)
+        called = re.findall(r"[\s]{1,}" + re.escape(function) + r"\(.+?\)", full_source, flags = re.DOTALL)
         if len(defined) != 0 and len(called) != 0:
             called_functions.append(function)
     pass
@@ -1645,13 +1645,13 @@ def unsloth_compile_transformers(
         except: continue
 
         causal_mask_find = \
-            r"(is_causal \= True if (.+?\_mask) is None and q_len \> 1 else False[\n\s]{1,})"\
-            r"([A-Za-z0-9\_]{1,}[\s]{1,}\=[\s]{1,}[A-Za-z\.]{1,}scaled\_dot\_product\_attention)"\
-            r"(.+?attn\_mask[\s]{0,}\=[\s]{0,})\2"\
-            r"(.+?is\_causal[\s]{0,}\=[\s]{0,})is\_causal"
+            r"(is_causal \= True if (.+?_mask) is None and q_len \> 1 else False[\n\s]{1,})"\
+            r"([A-Za-z0-9_]{1,}[\s]{1,}\=[\s]{1,}[A-Za-z\.]{1,}scaled_dot_product_attention)"\
+            r"(.+?attn_mask[\s]{0,}\=[\s]{0,})\2"\
+            r"(.+?is_causal[\s]{0,}\=[\s]{0,})is_causal"
 
         scaled_dot_product_attention_find = \
-            r"(\=[\s]{1,}[A-Za-z\.]{1,}scaled\_dot\_product\_attention)"
+            r"(\=[\s]{1,}[A-Za-z\.]{1,}scaled_dot_product_attention)"
 
         new_source = source
         if sdpa_dynamic_mask:
@@ -1947,7 +1947,7 @@ def unsloth_compile_transformers(
     spaces = re.search(r'\n([\s\t]{1,})', original_debug).group(0)[1:]
     front_spaces = re.match(r'([\s\t]{1,})', inner_training_loop).group(0)
 
-    debug_info = """debug_info = \\
+    debug_info = """debug_info = \
         f"==((====))==  Unsloth - 2x faster free finetuning | Num GPUs used = {len(set(p.device for p in model.parameters()))}\\n"\\
         f"   {chr(92)}{chr(92)}   /|    Num examples = {num_examples:,} | Num Epochs = {num_train_epochs:,} | Total steps = {max_steps:,}\\n"\\
         f"O^O/ {chr(92)}_/ {chr(92)}    Batch size per device = {self._train_batch_size:,} | Gradient accumulation steps = {args.gradient_accumulation_steps}\\n"\\
@@ -2004,7 +2004,7 @@ def unsloth_compile_transformers(
             if where == -1: where = source.find("\n") + 1
             else: where = where + len(str(parameters))
             code_section = source[where:]
-            cleaned_code_section = re.sub(r'\"\"\".+?\"\"\"', "", code_section, flags = re.DOTALL)
+            cleaned_code_section = re.sub(r'\"\"\".*?\"\"\"', "", code_section, flags = re.DOTALL)
 
             bad_params = []
             for param in params:

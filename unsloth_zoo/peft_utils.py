@@ -102,7 +102,7 @@ def get_peft_regex(
     regex_matcher = \
         r".*?(?:"  + regex_model_parts + \
         r").*?(?:" + regex_components + \
-        r").*?"    + match_linear_modules + ".*?"
+        r").*?"    + match_linear_modules + r".*?"
 
     # Also account for model.layers.0.self_attn/mlp type modules like Qwen
     if finetune_language_layers:
@@ -116,7 +116,7 @@ def get_peft_regex(
     if not check:
         regex_matcher = \
             r".*?(?:" + regex_components + \
-            r").*?"   + match_linear_modules + ".*?"
+            r").*?"   + match_linear_modules + r".*?"
     pass
 
     # Final check to confirm if matches exist
@@ -222,7 +222,7 @@ def requires_grad_for_gradient_checkpointing(model):
         if param.requires_grad: break
     if param is None: return
 
-    name = re.sub("\.([\d]{1,})\.", r"[\1].", name)
+    name = re.sub(r"\.([\d]{1,})\.", r"[\1].", name)
     name_components = name.split(".")
 
     if len(name_components) == 0:
