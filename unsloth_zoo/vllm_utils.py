@@ -1591,14 +1591,26 @@ def load_vllm(
 
     pass
 
-    # Use VLLM_USE_V1 for vllm >= 0.7.4 and CUDA >= 8.0
-    # [FAILS] for bitsandbytes - https://github.com/unslothai/unsloth/issues/2102
-    # if importlib.util.find_spec("vllm") and (major_version >= 8):
-    #     from importlib.metadata import version as importlib_version
-    #     from packaging.version import Version
-    #     if Version(importlib_version("vllm")) > Version("0.7.3"):
-    #         os.environ["VLLM_USE_V1"] = "1"
-    # pass
+    # Use VLLM_USE_V1 for vLLM >= 0.7.4 on supported platforms (CUDA 8.0+, ROCm, XPU)
+    # Must be set BEFORE importing vllm
+    if importlib.util.find_spec("vllm"):
+        from importlib.metadata import version as importlib_version
+        from packaging.version import Version
+        vllm_version = Version(importlib_version("vllm"))
+        
+        # Enable V1 for vLLM 0.7.4+ on supported hardware
+        should_use_v1 = False
+        if vllm_version >= Version("0.7.4"):
+            if DEVICE_TYPE == "cuda" and major_version >= 8:
+                should_use_v1 = True
+            elif DEVICE_TYPE == "hip":  # ROCm/AMD
+                should_use_v1 = True
+            elif DEVICE_TYPE == "xpu":  # Intel
+                should_use_v1 = True
+        
+        if should_use_v1 and os.getenv("VLLM_USE_V1") is None:
+            os.environ["VLLM_USE_V1"] = "1"
+            print(f"Unsloth: Setting VLLM_USE_V1=1 for vLLM {vllm_version} on {DEVICE_TYPE}")
 
     from vllm import LLM, LLMEngine, AsyncLLMEngine, EngineArgs, AsyncEngineArgs
 
