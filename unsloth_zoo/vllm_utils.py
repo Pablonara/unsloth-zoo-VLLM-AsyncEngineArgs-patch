@@ -64,6 +64,37 @@ from .log import logger
 from .device_type import DEVICE_TYPE
 global LORA_REQUEST_ID
 
+# Set VLLM_USE_V1 environment variable BEFORE any vLLM imports
+# This must be done at module level since vLLM may be imported elsewhere before load_vllm()
+if importlib.util.find_spec("vllm") is not None and os.getenv("VLLM_USE_V1") is None:
+    try:
+        from importlib.metadata import version as importlib_version
+        from packaging.version import Version
+        vllm_version = Version(importlib_version("vllm"))
+        
+        # Enable V1 for vLLM 0.7.4+ on supported hardware
+        should_use_v1 = False
+        if vllm_version >= Version("0.7.4"):
+            # Import major_version from utils
+            if DEVICE_TYPE == "hip":  # ROCm/AMD
+                should_use_v1 = True
+            elif DEVICE_TYPE == "xpu":  # Intel
+                should_use_v1 = True
+            elif DEVICE_TYPE == "cuda":
+                try:
+                    major_version, _ = torch.cuda.get_device_capability()
+                    if major_version >= 8:  # Ampere and newer
+                        should_use_v1 = True
+                except:
+                    pass
+        
+        if should_use_v1:
+            os.environ["VLLM_USE_V1"] = "1"
+            print(f"Unsloth: Auto-configured VLLM_USE_V1=1 for vLLM {vllm_version} on {DEVICE_TYPE}")
+    except Exception as e:
+        # Silently fail - better to let vLLM handle it than crash here
+        pass
+
 # Ignore logging messages
 import logging
 class HideLoggingMessage(logging.Filter):
@@ -1591,26 +1622,8 @@ def load_vllm(
 
     pass
 
-    # Use VLLM_USE_V1 for vLLM >= 0.7.4 on supported platforms (CUDA 8.0+, ROCm, XPU)
-    # Must be set BEFORE importing vllm
-    if importlib.util.find_spec("vllm"):
-        from importlib.metadata import version as importlib_version
-        from packaging.version import Version
-        vllm_version = Version(importlib_version("vllm"))
-        
-        # Enable V1 for vLLM 0.7.4+ on supported hardware
-        should_use_v1 = False
-        if vllm_version >= Version("0.7.4"):
-            if DEVICE_TYPE == "cuda" and major_version >= 8:
-                should_use_v1 = True
-            elif DEVICE_TYPE == "hip":  # ROCm/AMD
-                should_use_v1 = True
-            elif DEVICE_TYPE == "xpu":  # Intel
-                should_use_v1 = True
-        
-        if should_use_v1 and os.getenv("VLLM_USE_V1") is None:
-            os.environ["VLLM_USE_V1"] = "1"
-            print(f"Unsloth: Setting VLLM_USE_V1=1 for vLLM {vllm_version} on {DEVICE_TYPE}")
+    # Note: VLLM_USE_V1 is now set at module level (top of file) before any vLLM imports
+    # This ensures the environment variable is set before vLLM is imported anywhere in the stack
 
     from vllm import LLM, LLMEngine, AsyncLLMEngine, EngineArgs, AsyncEngineArgs
 
