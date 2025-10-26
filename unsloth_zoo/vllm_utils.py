@@ -1781,22 +1781,33 @@ def load_vllm(
                 gc.collect()
                 torch.cuda.empty_cache()
             pass
-            error = str(error)
+            error_str = str(error)
+            
+            # Check if the error is due to sleep mode not being supported
+            if "Sleep mode is not supported" in error_str and "enable_sleep_mode" in engine_args:
+                if engine_args.get("enable_sleep_mode", False):
+                    print(
+                        "Unsloth: Sleep mode is not supported on this platform. Disabling `enable_sleep_mode` and retrying."
+                    )
+                    engine_args["enable_sleep_mode"] = False
+                    trials -= 1  # Don't count this as a real trial
+                    continue
+            
             if trials >= 2 or unsloth_vllm_standby:
                 # Sleep mode uses CuMemAllocator which can't run multiple instances in single process.
                 # We can't do retry because vLLM will fail to load with said error.
-                raise RuntimeError(error)
+                raise RuntimeError(error_str)
 
-            if "gpu_memory_utilization" in error or "memory" in error:
+            if "gpu_memory_utilization" in error_str or "memory" in error_str:
                 approx_max_num_seqs = int(approx_max_num_seqs * 0.75)
                 engine_args["max_num_seqs"] = approx_max_num_seqs
                 engine_args["gpu_memory_utilization"] *= 0.85
                 print(
                     f"Unsloth: Retrying vLLM to process {approx_max_num_seqs} sequences and {max_num_batched_tokens} tokens in tandem.\n"\
-                    f"Error:\n{error}"
+                    f"Error:\n{error_str}"
                 )
             else:
-                raise RuntimeError(error)
+                raise RuntimeError(error_str)
         pass
     pass
     # Save maximum requests length since llm.generate fails to partition inputs sometimes
