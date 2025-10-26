@@ -864,16 +864,32 @@ def get_vllm_state_dict(llm, return_state_dict = False, config = None, is_vision
         else:
             raise AttributeError("Cannot find model_executor in engine")
     except Exception as first_error:
-        # Using a new VLLM version must use collective_rpc
+        # Using a new VLLM version with multiprocessing - try collective_rpc with asyncio
         try:
-            vllm_state_dict = {}
-            gpu_ids = llm.collective_rpc("report_device_id", args = tuple())
-            weights = llm.collective_rpc("get_weight_ipc_handles", args = tuple())[0]
-            weights = weights[gpu_ids[0]]
-            for weight_name, (to_cuda_fx, cuda_data,) in weights.items():
-                vllm_state_dict[weight_name] = to_cuda_fx(*cuda_data)
-            pass
-            raise NotImplementedError("Unsloth: Currently vLLM RPC is not yet fully enabled!")
+            import asyncio
+            import inspect
+            
+            # Check if collective_rpc returns a coroutine
+            test_call = llm.collective_rpc("get_model_runner", args = tuple())
+            if inspect.iscoroutine(test_call):
+                # Async version - we need to run in event loop
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        # Already in async context - create task and wait
+                        raise RuntimeError("Cannot call get_vllm_state_dict from async context - needs sync wrapper")
+                    else:
+                        # Not in async context - run directly
+                        model_runner = loop.run_until_complete(test_call)[0]
+                except RuntimeError:
+                    # No event loop - create one
+                    model_runner = asyncio.run(test_call)[0]
+                
+                vllm_internals = model_runner.model
+            else:
+                # Sync version
+                model_runner = test_call[0]
+                vllm_internals = model_runner.model
         except Exception as e:
             raise RuntimeError(
                 f"Unsloth: Cannot get internal vLLM states.\n"
