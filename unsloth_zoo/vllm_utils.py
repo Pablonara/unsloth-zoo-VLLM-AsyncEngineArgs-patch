@@ -1775,7 +1775,6 @@ def load_vllm(
             pass
             break
         except Exception as error:
-            trials += 1
             # Cleanup
             for _ in range(3):
                 gc.collect()
@@ -1784,15 +1783,16 @@ def load_vllm(
             error_str = str(error)
             
             # Check if the error is due to sleep mode not being supported
+            # This needs to be checked BEFORE checking trials/unsloth_vllm_standby
             if "Sleep mode is not supported" in error_str and "enable_sleep_mode" in engine_args:
                 if engine_args.get("enable_sleep_mode", False):
                     print(
                         "Unsloth: Sleep mode is not supported on this platform. Disabling `enable_sleep_mode` and retrying."
                     )
                     engine_args["enable_sleep_mode"] = False
-                    trials -= 1  # Don't count this as a real trial
                     continue
             
+            trials += 1
             if trials >= 2 or unsloth_vllm_standby:
                 # Sleep mode uses CuMemAllocator which can't run multiple instances in single process.
                 # We can't do retry because vLLM will fail to load with said error.
