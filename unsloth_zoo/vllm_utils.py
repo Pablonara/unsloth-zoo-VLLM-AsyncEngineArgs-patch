@@ -848,14 +848,22 @@ def get_vllm_state_dict(llm, return_state_dict = False, config = None, is_vision
     # vllm_state_dict = {}
     try:
         llm_engine = getattr(llm, "llm_engine", getattr(llm, "engine", llm))
-        # Handle V1 vs V0 engines
-        if hasattr(llm_engine, "engine_core"):
+        
+        # Try multiple paths to access model internals
+        # V1 engine with ColocateWorkerExtension (in-process worker)
+        if hasattr(llm_engine, "engine") and hasattr(llm_engine.engine, "model_executor"):
+            # V1 AsyncLLMEngine with in-process executor
+            vllm_internals = llm_engine.engine.model_executor.driver_worker.model_runner.model
+        # V1 engine with multiprocessing (engine_core approach)
+        elif hasattr(llm_engine, "engine_core") and not isinstance(llm_engine.engine_core, type(llm_engine)):
             # V1 engine - access through engine_core (multiprocessing is disabled by patch_vllm)
             vllm_internals = llm_engine.engine_core.engine_core.model_executor.driver_worker.model_runner.model
-        else:
-            # V0 engine - direct access
+        # V0 engine - direct access
+        elif hasattr(llm_engine, "model_executor"):
             vllm_internals = llm_engine.model_executor.driver_worker.model_runner.model
-    except:
+        else:
+            raise AttributeError("Cannot find model_executor in engine")
+    except Exception as first_error:
         # Using a new VLLM version must use collective_rpc
         try:
             vllm_state_dict = {}
@@ -867,7 +875,11 @@ def get_vllm_state_dict(llm, return_state_dict = False, config = None, is_vision
             pass
             raise NotImplementedError("Unsloth: Currently vLLM RPC is not yet fully enabled!")
         except Exception as e:
-            raise RuntimeError(f"Unsloth: Cannot get internal vLLM states with error = {str(e)}")
+            raise RuntimeError(
+                f"Unsloth: Cannot get internal vLLM states.\n"
+                f"First error: {str(first_error)}\n"
+                f"Second error: {str(e)}"
+            )
     pass
 
     assert(config is not None)
