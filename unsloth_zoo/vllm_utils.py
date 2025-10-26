@@ -1743,8 +1743,13 @@ def load_vllm(
         device                 = device,
         # New vLLM versions need to pass this in!
         # worker_extension_cls   = "unsloth_zoo.vllm_rlhf_utils.ColocateWorkerExtension",
-        enable_sleep_mode      = unsloth_vllm_standby,
+        enable_sleep_mode      = unsloth_vllm_standby and DEVICE_TYPE == "cuda",  # Sleep mode only works on CUDA
     )
+    
+    # Warn if sleep mode was requested but not supported
+    if unsloth_vllm_standby and DEVICE_TYPE != "cuda":
+        print(f"Unsloth: Sleep mode is only supported on CUDA. Your device type is {DEVICE_TYPE}. Disabling sleep mode.")
+    
     if is_vision_model:
         # To reduce memory usage, we limit the number of images/videos per prompt
         # TODO: Make it configurable by user
