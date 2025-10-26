@@ -864,38 +864,50 @@ def get_vllm_state_dict(llm, return_state_dict = False, config = None, is_vision
         else:
             raise AttributeError("Cannot find model_executor in engine")
     except Exception as first_error:
-        # Using a new VLLM version with multiprocessing - try collective_rpc with asyncio
+        # Using a new VLLM version with multiprocessing - try accessing through engine structure
         try:
-            import asyncio
-            import inspect
-            
-            # Check if collective_rpc returns a coroutine
-            test_call = llm.collective_rpc("get_model_runner", args = tuple())
-            if inspect.iscoroutine(test_call):
-                # Async version - we need to run in event loop
-                try:
-                    loop = asyncio.get_event_loop()
-                    if loop.is_running():
-                        # Already in async context - create task and wait
-                        raise RuntimeError("Cannot call get_vllm_state_dict from async context - needs sync wrapper")
-                    else:
-                        # Not in async context - run directly
-                        model_runner = loop.run_until_complete(test_call)[0]
-                except RuntimeError:
-                    # No event loop - create one
-                    model_runner = asyncio.run(test_call)[0]
-                
-                vllm_internals = model_runner.model
+            # For V1 engine with AsyncMPClient, we need to access differently
+            # Try to get the backend engine through the async wrapper
+            if hasattr(llm, "engine") and hasattr(llm.engine, "backend_engine"):
+                # V1 AsyncLLM with backend_engine
+                backend = llm.engine.backend_engine
+                if hasattr(backend, "model_executor"):
+                    vllm_internals = backend.model_executor.driver_worker.model_runner.model
+                else:
+                    raise AttributeError("backend_engine has no model_executor")
             else:
-                # Sync version
-                model_runner = test_call[0]
-                vllm_internals = model_runner.model
-        except Exception as e:
-            raise RuntimeError(
-                f"Unsloth: Cannot get internal vLLM states.\n"
-                f"First error: {str(first_error)}\n"
-                f"Second error: {str(e)}"
-            )
+                raise AttributeError("Cannot find backend_engine path")
+        except Exception as second_error:
+            # Last resort: try the collective_rpc approach (might fail due to serialization)
+            try:
+                import asyncio
+                import inspect
+                
+                # Check if collective_rpc returns a coroutine
+                test_call = llm.collective_rpc("get_model_runner", args = tuple())
+                if inspect.iscoroutine(test_call):
+                    # Async version - we need to run in event loop
+                    try:
+                        loop = asyncio.get_event_loop()
+                        if loop.is_running():
+                            raise RuntimeError("Cannot call from async context")
+                        else:
+                            model_runner = loop.run_until_complete(test_call)[0]
+                    except RuntimeError:
+                        model_runner = asyncio.run(test_call)[0]
+                    
+                    vllm_internals = model_runner.model
+                else:
+                    # Sync version
+                    model_runner = test_call[0]
+                    vllm_internals = model_runner.model
+            except Exception as third_error:
+                raise RuntimeError(
+                    f"Unsloth: Cannot get internal vLLM states.\n"
+                    f"First error (direct access): {str(first_error)}\n"
+                    f"Second error (backend_engine): {str(second_error)}\n"
+                    f"Third error (collective_rpc): {str(third_error)}"
+                )
     pass
 
     assert(config is not None)
